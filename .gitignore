@@ -5,8 +5,8 @@ build/
 .DS_Store
 seed.js
 
-dashboard/
-frontend/components/
+/frontend/dashboard/
+/frontend/components/
 
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
@@ -23,6 +23,7 @@ frontend/components/
 # testing
 /coverage
 
+/frontend/.next/
 # next.js
 /.next/
 /out/
