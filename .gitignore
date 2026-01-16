@@ -4,3 +4,7 @@ dist/
 build/
 .DS_Store
 seed.js
+
+dashboard/
+frontend/components/
+
