@@ -17,6 +17,10 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: "Username already exists" });
     }
 
+    if (pin && pin.length !== 4) {
+  return res.status(400).json({ message: "PIN must be exactly 4 digits" });
+}
+
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     const hashedPin = await bcrypt.hash(pin, salt);
