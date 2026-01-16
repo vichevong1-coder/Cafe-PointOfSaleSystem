@@ -1,30 +1,70 @@
 const Product = require("../models/Product");
+const Category = require("../models/Category");
 const fs = require("fs");
 const path = require("path");
+
+// ============================================
+// HELPER: Find or Create Category by Name
+// ============================================
+const getCategoryId = async (categoryInput) => {
+  // If it's already a valid ObjectId (24 hex chars), return it
+  if (/^[0-9a-fA-F]{24}$/.test(categoryInput)) {
+    const categoryExists = await Category.findById(categoryInput);
+    if (categoryExists) {
+      return categoryInput;
+    }
+    throw new Error(`Category ID ${categoryInput} not found`);
+  }
+
+  // Otherwise, treat it as a category name
+  // Search case-insensitive
+  let category = await Category.findOne({ 
+    name: { $regex: new RegExp(`^${categoryInput}$`, 'i') } 
+  });
+
+  // If category doesn't exist, create it automatically
+  if (!category) {
+    category = await Category.create({ name: categoryInput });
+    console.log(`✅ Auto-created category: ${categoryInput}`);
+  }
+
+  return category._id;
+};
 
 // ============================================
 // GET ALL PRODUCTS
 // ============================================
 exports.getproducts = async (req, res) => {
   try {
-    const { category, isAvailable, search } = req.query;  // ✅ Fixed typo
+    const { category, isAvailable, search } = req.query;
     let filter = {};
 
-    if (category) {  // ✅ Fixed: was "catrgory"
-      filter.category = category;
+    // Support filtering by category name OR ID
+    if (category) {
+      try {
+        filter.category = await getCategoryId(category);
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: error.message
+        });
+      }
     }
 
-  
+    if (isAvailable !== undefined) {
+      filter.isAvailable = isAvailable === 'true';
+    }
+
     if (search) {
       filter.name = { $regex: search, $options: "i" };
     }
 
-    // ✅ Fixed: use .sort() not .toSorted()
-    // ✅ Fixed: "createdAt" not "createAt"
-    const products = await Product.find(filter).sort({ createdAt: -1 });
+    const products = await Product.find(filter)
+      .populate('category', 'name')
+      .sort({ createdAt: -1 });
 
     res.json({
-      success: true,  // ✅ Fixed: was "succsess"
+      success: true,
       count: products.length,
       data: products,
     });
@@ -39,7 +79,8 @@ exports.getproducts = async (req, res) => {
 // ============================================
 exports.getProduct = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findById(req.params.id)
+      .populate('category', 'name');
 
     if (!product) {
       return res
@@ -60,6 +101,17 @@ exports.createProduct = async (req, res) => {
   try {
     const { name, category, price, description, modifiers, stock } = req.body;
     
+    // ✅ Convert category name to ID (or use ID if provided)
+    let categoryId;
+    try {
+      categoryId = await getCategoryId(category);
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
     let parsedModifiers = [];
     if (modifiers) {
       parsedModifiers =
@@ -68,7 +120,7 @@ exports.createProduct = async (req, res) => {
     
     const productData = {
       name,
-      category,
+      category: categoryId, // ✅ Use the converted ID
       price,
       description,
       modifiers: parsedModifiers,
@@ -80,12 +132,16 @@ exports.createProduct = async (req, res) => {
     }
     
     const product = await Product.create(productData);
+    
+    // Populate category before sending response
+    await product.populate('category', 'name');
+
     res.status(201).json({ success: true, data: product });
   } catch (error) {
     console.error("Error creating product:", error);
 
     if (req.file) {
-      fs.unlinkSync(req.file.path);  // ✅ Fixed: was "unlinkeSync"
+      fs.unlinkSync(req.file.path);
     }
     res.status(500).json({
       message: "Server error",
@@ -98,7 +154,7 @@ exports.createProduct = async (req, res) => {
 // ============================================
 // UPDATE PRODUCT
 // ============================================
-exports.updateProduct = async (req, res) => {  // ✅ Fixed: was "updateproduct"
+exports.updateProduct = async (req, res) => {
   try {
     let product = await Product.findById(req.params.id);
     if (!product) {
@@ -109,6 +165,19 @@ exports.updateProduct = async (req, res) => {  // ✅ Fixed: was "updateproduct"
     
     const { name, category, price, description, modifiers, isAvailable, stock } = req.body;
 
+    // ✅ Convert category name to ID if category is being updated
+    let categoryId = product.category;
+    if (category) {
+      try {
+        categoryId = await getCategoryId(category);
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: error.message,
+        });
+      }
+    }
+
     let parsedModifiers = modifiers;
     if (modifiers && typeof modifiers === "string") {
       parsedModifiers = JSON.parse(modifiers);
@@ -116,11 +185,12 @@ exports.updateProduct = async (req, res) => {  // ✅ Fixed: was "updateproduct"
 
     const updateData = {
       name: name || product.name,
-      category: category || product.category,
-      price: price || product.price,
+      category: categoryId,
+      price: price !== undefined ? price : product.price,
       description: description !== undefined ? description : product.description,
       modifiers: parsedModifiers || product.modifiers,
-     
+      isAvailable: isAvailable !== undefined ? isAvailable : product.isAvailable,
+      stock: stock !== undefined ? stock : product.stock,
     };
     
     if (req.file) {
@@ -136,7 +206,7 @@ exports.updateProduct = async (req, res) => {  // ✅ Fixed: was "updateproduct"
     product = await Product.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
       runValidators: true,
-    });
+    }).populate('category', 'name');
 
     res.json({
       success: true,
@@ -147,7 +217,11 @@ exports.updateProduct = async (req, res) => {  // ✅ Fixed: was "updateproduct"
     if (req.file) {
       fs.unlinkSync(req.file.path);
     }
-    res.status(500).json({ message: "Server error", success: false });
+    res.status(500).json({ 
+      message: "Server error", 
+      success: false,
+      error: error.message
+    });
   }
 };
 

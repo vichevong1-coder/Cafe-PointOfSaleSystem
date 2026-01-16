@@ -4,6 +4,8 @@ const path = require('path');
 const connectDB = require('./src/config/db');
 const authRoutes = require('./src/routes/auth');
 const productRoutes = require('./src/routes/product');
+const categoryRoutes = require('./src/routes/category');
+
 
 dotenv.config();
 
@@ -18,6 +20,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/products',productRoutes);
+app.use('/api/categories', categoryRoutes);
 
 app.get('/', (req, res) => {
   res.send('Api is working...');
